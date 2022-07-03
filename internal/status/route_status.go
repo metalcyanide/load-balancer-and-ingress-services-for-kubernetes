@@ -545,7 +545,7 @@ func deleteRouteObject(option UpdateOptions, key string, isVSDelete bool, retryN
 
 	oldRouteStatus := mRoute.Status.DeepCopy()
 	if len(option.ServiceMetadata.HostNames) > 0 {
-		// If the route status for the host is already fasle, then don't delete the status
+		// If the route status for the host is already false, then don't delete the status
 		if !routeStatusCheck(key, oldRouteStatus.Ingress, option.ServiceMetadata.HostNames[0]) {
 			return nil
 		}
@@ -553,7 +553,7 @@ func deleteRouteObject(option UpdateOptions, key string, isVSDelete bool, retryN
 
 	utils.AviLog.Infof("key: %s, deleting hostnames %v from Route status %s/%s", key, option.ServiceMetadata.HostNames, option.ServiceMetadata.Namespace, option.ServiceMetadata.IngressName)
 	svcMdataHostname := option.ServiceMetadata.HostNames[0]
-	for i := 0; i < len(mRoute.Status.Ingress); i++ {
+	for i := len(mRoute.Status.Ingress) - 1; i >= 0; i-- {
 		if mRoute.Status.Ingress[i].Host != svcMdataHostname {
 			continue
 		}

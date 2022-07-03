@@ -498,8 +498,14 @@ func (rest *RestOperations) AviVsVipCacheAdd(rest_op *utils.RestOp, vsKey avicac
 						continue
 					}
 					vsvipVips = append(vsvipVips, addr)
+					fipEnabled := false
+					auto_allocate_floating_ip, ok := vip["auto_allocate_floating_ip"]
+					if ok {
+						fipEnabled = auto_allocate_floating_ip.(bool)
+					}
 					floating_ip, valid := vip["floating_ip"].(map[string]interface{})
-					if !valid {
+
+					if fipEnabled && !valid {
 						utils.AviLog.Warnf("key: %s, msg: invalid type for floating_ip in vsvip: %s", key, name)
 					} else {
 						fip_addr, valid := floating_ip["addr"].(string)
@@ -589,8 +595,7 @@ func (rest *RestOperations) AviVsVipCacheAdd(rest_op *utils.RestOp, vsKey avicac
 		} else {
 			vs_cache_obj := rest.cache.VsCacheMeta.AviCacheAddVS(vsKey)
 			vs_cache_obj.AddToVSVipKeyCollection(k)
-			utils.AviLog.Info(spew.Sprintf("key: %s, msg: added VS cache key during vsvip update %v val %v", key, vsKey,
-				vs_cache_obj))
+			utils.AviLog.Infof("key: %s, msg: added VS cache key during vsvip update %v val %v", key, vsKey, utils.Stringify(vs_cache_obj))
 			if rest_op.Method == utils.RestPut {
 				if len(vs_cache_obj.SNIChildCollection) > 0 {
 					for _, childUuid := range vs_cache_obj.SNIChildCollection {

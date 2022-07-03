@@ -45,6 +45,10 @@ var (
 		GetParentGateways:              SvcToGateway,
 		GetParentMultiClusterIngresses: SvcToMultiClusterIng,
 	}
+	SharedVipService = GraphSchema{
+		Type:              "SharedVipService",
+		GetParentServices: ServiceChanges,
+	}
 	Ingress = GraphSchema{
 		Type:               "Ingress",
 		GetParentIngresses: IngressChanges,
@@ -116,6 +120,7 @@ var (
 		Ingress,
 		IngressClass,
 		Service,
+		SharedVipService,
 		Pod,
 		Endpoint,
 		Secret,
@@ -685,7 +690,7 @@ func HTTPRuleToIng(rrname string, namespace string, key string) ([]string, bool)
 		for pathPrefix := range pathRules {
 			re := regexp.MustCompile(fmt.Sprintf(`^%s.*`, strings.ReplaceAll(pathPrefix, `/`, `\/`)))
 			for path, ingresses := range pathIngs {
-				if !re.MatchString(path) {
+				if path != "" && !re.MatchString(path) {
 					continue
 				}
 				utils.AviLog.Debugf("key: %s, msg: Computing for path %s in ingresses %v", key, path, ingresses)
@@ -705,7 +710,7 @@ func HTTPRuleToIng(rrname string, namespace string, key string) ([]string, bool)
 		for oldPathPrefix := range oldPathRules {
 			re := regexp.MustCompile(fmt.Sprintf(`^%s.*`, strings.ReplaceAll(oldPathPrefix, `/`, `\/`)))
 			for oldPath, oldIngresses := range oldPathIngs {
-				if !re.MatchString(oldPath) {
+				if oldPath != "" && !re.MatchString(oldPath) {
 					continue
 				}
 				utils.AviLog.Debugf("key: %s, msg: Computing for oldPath %s in oldIngresses %v", key, oldPath, oldIngresses)
@@ -813,6 +818,34 @@ func AviSettingToSvc(infraSettingName string, namespace string, key string) ([]s
 
 	utils.AviLog.Debugf("key: %s, msg: total services retrieved from AviInfraSettings: %s", key, allSvcs)
 	return allSvcs, true
+}
+
+func ServiceChanges(serviceName, namespace, key string) ([]string, bool) {
+	var vipKeys []string
+	serviceNamespaceName := namespace + "/" + serviceName
+	serviceObj, err := utils.GetInformers().ServiceInformer.Lister().Services(namespace).Get(serviceName)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			if found, oldKey := objects.SharedlbLister().GetServiceToSharedVipKey(serviceNamespaceName); found {
+				vipKeys = append(vipKeys, oldKey)
+			}
+			objects.SharedlbLister().RemoveSharedVipKeyServiceMappings(serviceNamespaceName)
+		}
+	} else {
+		found, oldKey := objects.SharedlbLister().GetServiceToSharedVipKey(serviceNamespaceName)
+		if found {
+			vipKeys = append(vipKeys, oldKey)
+			objects.SharedlbLister().RemoveSharedVipKeyServiceMappings(serviceNamespaceName)
+		}
+
+		if currentKey, ok := serviceObj.Annotations[lib.SharedVipSvcLBAnnotation]; ok {
+			if currentKey != oldKey {
+				vipKeys = append(vipKeys, serviceObj.Namespace+"/"+currentKey)
+			}
+			objects.SharedlbLister().UpdateSharedVipKeyServiceMappings(serviceObj.Namespace+"/"+currentKey, serviceNamespaceName)
+		}
+	}
+	return vipKeys, true
 }
 
 func parseServicesForIngress(ingSpec networkingv1.IngressSpec, key string) []string {

@@ -85,7 +85,10 @@ func InitializeAKC() {
 	// Initialize akoControlConfig
 	akoControlConfig := lib.AKOControlConfig()
 	//Used to set vrf context, static routes
-	isPrimaryAKO, _ := strconv.ParseBool(os.Getenv("PRIMARY_AKO_FLAG"))
+	isPrimaryAKO, err := strconv.ParseBool(os.Getenv("PRIMARY_AKO_FLAG"))
+	if err != nil {
+		isPrimaryAKO = true
+	}
 	akoControlConfig.SetAKOInstanceFlag(isPrimaryAKO)
 	var crdClient *crd.Clientset
 	var advl4Client *advl4.Clientset
@@ -263,6 +266,8 @@ func InitializeAKC() {
 		akoControlConfig.PodEventf(corev1.EventTypeWarning, lib.AKOShutdown, "Avi Controller Cluster state is not Active")
 		utils.AviLog.Fatalf("Avi Controller Cluster state is not Active, shutting down AKO")
 	}
+
+	akoControlConfig.SetLicenseType(aviRestClientPool.AviClient[0])
 
 	err = c.HandleConfigMap(informers, ctrlCh, stopCh, quickSyncCh)
 	if err != nil {

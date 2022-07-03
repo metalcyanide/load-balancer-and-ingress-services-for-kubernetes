@@ -760,7 +760,17 @@ func (c *AviController) FullSyncK8s() error {
 		}
 	}
 
-	acceptedNamespaces := utils.GetAllNamespacesInFilter()
+	acceptedNamespaces := make(map[string]struct{})
+	allNamespaces, err := utils.GetInformers().ClientSet.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		utils.AviLog.Errorf("Error in getting all namespaces: %v", err.Error())
+		return err
+	}
+	for _, ns := range allNamespaces.Items {
+		if utils.CheckIfNamespaceAccepted(ns.GetName(), ns.GetLabels(), false) {
+			acceptedNamespaces[ns.GetName()] = struct{}{}
+		}
+	}
 
 	for namespace := range acceptedNamespaces {
 		svcObjs, err := utils.GetInformers().ServiceInformer.Lister().Services(namespace).List(labels.Set(nil).AsSelector())
@@ -773,12 +783,12 @@ func (c *AviController) FullSyncK8s() error {
 			isSvcLb := isServiceLBType(svcObj)
 			var key string
 			if isSvcLb && !lib.GetLayer7Only() {
-				/*
-					Key added to Ingestion queue if
-					1. Advance L4 enabled or
-					2. Namespace is valid
-				*/
 				key = utils.L4LBService + "/" + utils.ObjKey(svcObj)
+				if svcObj.Annotations[lib.SharedVipSvcLBAnnotation] != "" {
+					// mark the object type as ShareVipSvc
+					// to separate these out from regulare clusterip, svclb services
+					key = lib.SharedVipServiceKey + "/" + utils.ObjKey(svcObj)
+				}
 			} else {
 				if lib.GetAdvancedL4() {
 					continue
@@ -910,6 +920,25 @@ func (c *AviController) FullSyncK8s() error {
 					utils.AviLog.Warnf("key: %s, Error retrieved during validation of AviInfraSetting: %v", key, err)
 				}
 				nodes.DequeueIngestion(key, true)
+			}
+		}
+
+		// IngressClass Section
+		if utils.GetInformers().IngressClassInformer != nil {
+			ingClassObjs, err := utils.GetInformers().IngressClassInformer.Lister().List(labels.Set(nil).AsSelector())
+			if err != nil {
+				utils.AviLog.Errorf("Unable to retrieve the ingress classess during full sync: %s", err)
+			} else {
+				for _, ingClass := range ingClassObjs {
+					key := utils.IngressClass + "/" + utils.ObjKey(ingClass)
+					meta, err := meta.Accessor(ingClass)
+					if err == nil {
+						resVer := meta.GetResourceVersion()
+						objects.SharedResourceVerInstanceLister().Save(key, resVer)
+					}
+					utils.AviLog.Debugf("Dequeue for ingressClass key: %v", key)
+					nodes.DequeueIngestion(key, true)
+				}
 			}
 		}
 

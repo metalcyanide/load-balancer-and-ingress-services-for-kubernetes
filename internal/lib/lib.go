@@ -101,10 +101,11 @@ func (c ServiceMetadataObj) ServiceMetadataMapping(objType string) ServiceMetada
 		// 1) Advl4 VS
 		// 2) SvcApi VS
 		return GatewayVS
-	} else if len(c.NamespaceIngressName) > 0 {
+	} else if len(c.NamespaceIngressName) > 0 || c.PassthroughChildRef != "" {
 		// Check for `NamespaceIngressName` in VS serviceMetadata. Present in case of
 		// 1) SNI Secure VS
 		// 2) EVH Secure/Insecure VS
+		// or Check Passthrough VS using child ref
 		return ChildVS
 	} else if objType == "VS" && len(c.NamespaceServiceName) > 0 {
 		// Check for `NamesppaceServiceName` in VS serviceMetadata. Present in case of
@@ -114,6 +115,7 @@ func (c ServiceMetadataObj) ServiceMetadataMapping(objType string) ServiceMetada
 		// Check for `NamespaceServiceName` in Pool serviceMetadata. Present in case of
 		// 1) Advl4 Pools: without hostname information
 		// 2) SvcApi Pools: with hostname information
+		// 3) SharedVip SvcLB Pools: with hostname information
 		return GatewayPool
 	} else if c.Namespace != "" && c.IngressName != "" {
 		// Check for `Namespace` and `IngressName` in Pool serviceMetadata. Present in case of
@@ -333,8 +335,8 @@ func GetL4VSVipName(svcName, namespace string) string {
 	return Encode(NamePrefix+namespace+"-"+svcName, L4VIP)
 }
 
-func GetL4PoolName(svcName, namespace string, port int32) string {
-	poolName := NamePrefix + namespace + "-" + svcName + "--" + strconv.Itoa(int(port))
+func GetL4PoolName(svcName, namespace, protocol string, port int32) string {
+	poolName := NamePrefix + namespace + "-" + svcName + "-" + protocol + "-" + strconv.Itoa(int(port))
 	return Encode(poolName, L4Pool)
 }
 
@@ -1300,9 +1302,14 @@ func IsValidLabelOnNode(labels map[string]string, key string) bool {
 }
 
 var CloudType string
+var CloudUUID string
 
 func SetCloudType(cloudType string) {
 	CloudType = cloudType
+}
+
+func SetCloudUUID(cloudUUID string) {
+	CloudUUID = cloudUUID
 }
 
 func GetCloudType() string {
@@ -1310,6 +1317,10 @@ func GetCloudType() string {
 		return CLOUD_VCENTER
 	}
 	return CloudType
+}
+
+func GetCloudUUID() string {
+	return CloudUUID
 }
 
 var IsCloudInAdminTenant = true
